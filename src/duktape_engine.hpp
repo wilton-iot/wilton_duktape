@@ -13,7 +13,9 @@
 #include "staticlib/json.hpp"
 #include "staticlib/pimpl.hpp"
 
+#include "wilton/support/buffer.hpp"
 #include "wilton/support/exception.hpp"
+#include "wilton/support/script_engine.hpp"
 
 namespace wilton {
 namespace duktape {
@@ -31,10 +33,10 @@ public:
      * @param pimpl impl object
      */
     PIMPL_CONSTRUCTOR(duktape_engine)
-            
-    duktape_engine(const std::string& requirejs_dir_path);
 
-    std::string run_script(const std::string& callback_script_json);
+    duktape_engine(sl::io::span<const char> init_code);
+    
+    support::buffer run_callback_script(sl::io::span<const char> callback_script_json);
 };
 
 } // namespace

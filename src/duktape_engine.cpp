@@ -186,7 +186,7 @@ class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
     
 public:
-    impl(const std::string& requirejs_dir_path) :
+    impl(sl::io::span<const char> init_code) :
     dukctx(duk_create_heap(nullptr, nullptr, nullptr, nullptr, fatal_handler), ctx_deleter) {
         auto ctx = dukctx.get();
         if (nullptr == ctx) throw support::exception(TRACEMSG(
@@ -196,30 +196,16 @@ public:
         });
         register_c_func(ctx, "WILTON_load", load_func, 1);
         register_c_func(ctx, "WILTON_wiltoncall", wiltoncall_func, 2);
-        auto code_path = requirejs_dir_path + "/wilton-require.js";
-        // load code
-        char* code = nullptr;
-        int code_len = 0;
-        auto err_load = wilton_load_script(code_path.c_str(), static_cast<int>(code_path.length()),
-                std::addressof(code), std::addressof(code_len));
-        if (nullptr != err_load) {
-            support::throw_wilton_error(err_load, TRACEMSG(err_load));
-        }
-        if (0 == code_len) {
-            throw support::exception(TRACEMSG(
-                    "\nInvalid empty source code loaded, path: [" + code_path + "]").c_str());
-        }
-        eval_js(ctx, code, static_cast<size_t>(code_len));
-        wilton_free(code);
+        eval_js(ctx, init_code.data(), init_code.size());
     }
 
-    std::string run_script(duktape_engine&, const std::string& callback_script_json) {
+    support::buffer run_callback_script(duktape_engine&, sl::io::span<const char> callback_script_json) {
         auto ctx = dukctx.get();
         auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
             pop_stack(ctx);
         });
         duk_get_global_string(ctx, "WILTON_run");
-        duk_push_string(ctx, callback_script_json.c_str());
+        duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
         auto err = duk_pcall(ctx, 1);
         if (DUK_EXEC_SUCCESS != err) {                        
             throw support::exception(TRACEMSG(format_stacktrace(ctx)));
@@ -228,15 +214,15 @@ public:
             size_t len;
             const char* str = duk_get_lstring(ctx, -1, std::addressof(len));
             if (len > 0) {
-                return std::string(str, len);
+                return support::make_array_buffer(str, len);
             }
         }
-        return "";
+        return support::make_empty_buffer();
     }    
 };
 
-PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (const std::string&), (), support::exception)
-PIMPL_FORWARD_METHOD(duktape_engine, std::string, run_script, (const std::string&), (), support::exception)
+PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (sl::io::span<const char>), (), support::exception)
+PIMPL_FORWARD_METHOD(duktape_engine, support::buffer, run_callback_script, (sl::io::span<const char>), (), support::exception)
 
 
 } // namespace
