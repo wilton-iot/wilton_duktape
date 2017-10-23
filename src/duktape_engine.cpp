@@ -65,7 +65,7 @@ duk_ret_t load_func(duk_context* ctx) {
         size_t path_len;
         const char* path_ptr = duk_get_lstring(ctx, 0, std::addressof(path_len));
         if (nullptr == path_ptr) {
-            throw support::exception(TRACEMSG("Invalid 'load' arguments"));
+            throw support::exception(TRACEMSG("Invalid arguments specified"));
         }    
         path = std::string(path_ptr, path_len);
         // load code
@@ -148,6 +148,7 @@ void register_c_func(duk_context* ctx, const std::string& name, duk_c_function f
 void eval_js(duk_context* ctx, const char* code, size_t code_len) {
     auto err = duk_peval_lstring(ctx, code, code_len);
     if (DUK_EXEC_SUCCESS != err) {
+        // cannot happen - c++ exception will be thrown by duktape
         throw support::exception(TRACEMSG(format_error(ctx) +
                 "\nDuktape engine eval error"));
     }
