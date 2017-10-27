@@ -23,6 +23,7 @@
 #include "wilton/wilton_loader.h"
 
 #include "wilton/support/exception.hpp"
+#include "wilton/support/logging.hpp"
 
 namespace wilton {
 namespace duktape {
@@ -80,6 +81,8 @@ duk_ret_t load_func(duk_context* ctx) {
             throw support::exception(TRACEMSG(
                     "\nInvalid empty source code loaded, path: [" + path + "]").c_str());
         }
+        wilton::support::log_debug("wilton.engine.duktape.eval",
+                "Evaluating source file, path: [" + path + "] ...");
         // compile source
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
@@ -94,6 +97,7 @@ duk_ret_t load_func(duk_context* ctx) {
             duk_pop(ctx);
             throw support::exception(TRACEMSG(msg + "\nCall error"));
         } else {
+            wilton::support::log_debug("wilton.engine.duktape.eval", "Eval complete");
             duk_pop(ctx);
             duk_push_true(ctx);
         }
@@ -122,8 +126,12 @@ duk_ret_t wiltoncall_func(duk_context* ctx) {
     }
     char* out = nullptr;
     int out_len = 0;
+    wilton::support::log_debug(std::string("wilton.wiltoncall.") + name,
+            "Performing a call, input length: [" + sl::support::to_string(input_len) + "] ...");
     auto err = wiltoncall(name, static_cast<int> (name_len), input, static_cast<int> (input_len),
             std::addressof(out), std::addressof(out_len));
+    wilton::support::log_debug(std::string("wilton.wiltoncall.") + name,
+            "Call complete, result: [" + (nullptr != err ? std::string(err) : "") + "]");
     if (nullptr == err) {
         if (nullptr != out) {
             duk_push_lstring(ctx, out, out_len);
@@ -188,8 +196,10 @@ class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
     
 public:
-    impl(sl::io::span<const char> init_code) :
-    dukctx(duk_create_heap(nullptr, nullptr, nullptr, nullptr, fatal_handler), ctx_deleter) {
+    impl(sl::io::span<const char> init_code) {
+        wilton::support::log_info("wilton.engine.duktape.init", "Initializing engine instance ...");
+        this->dukctx = std::unique_ptr<duk_context, std::function<void(duk_context*)>>(
+                duk_create_heap(nullptr, nullptr, nullptr, nullptr, fatal_handler), ctx_deleter);
         auto ctx = dukctx.get();
         if (nullptr == ctx) throw support::exception(TRACEMSG(
                 "Error creating Duktape context"));
@@ -199,6 +209,7 @@ public:
         register_c_func(ctx, "WILTON_load", load_func, 1);
         register_c_func(ctx, "WILTON_wiltoncall", wiltoncall_func, 2);
         eval_js(ctx, init_code.data(), init_code.size());
+        wilton::support::log_info("wilton.engine.duktape.init", "Engine initialization complete");
     }
 
     support::buffer run_callback_script(duktape_engine&, sl::io::span<const char> callback_script_json) {
@@ -206,10 +217,14 @@ public:
         auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
             pop_stack(ctx);
         });
+        wilton::support::log_debug("wilton.engine.duktape.run", 
+                "Running callback script: [" + std::string(callback_script_json.data(), callback_script_json.size()) + "] ...");
         duk_get_global_string(ctx, "WILTON_run");
         duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
         auto err = duk_pcall(ctx, 1);
-        if (DUK_EXEC_SUCCESS != err) {                        
+        wilton::support::log_debug("wilton.engine.duktape.run",
+                "Callback run complete, result: [" + sl::support::to_string_bool(DUK_EXEC_SUCCESS == err) + "]");
+        if (DUK_EXEC_SUCCESS != err) {
             throw support::exception(TRACEMSG(format_stacktrace(ctx)));
         }
         if (DUK_TYPE_STRING == duk_get_type(ctx, -1)) {
