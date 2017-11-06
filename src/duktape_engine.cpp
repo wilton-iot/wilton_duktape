@@ -231,7 +231,7 @@ public:
             size_t len;
             const char* str = duk_get_lstring(ctx, -1, std::addressof(len));
             if (len > 0) {
-                return support::make_array_buffer(str, len);
+                return support::make_array_buffer(str, static_cast<int> (len));
             }
         }
         return support::make_empty_buffer();
