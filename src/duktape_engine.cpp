@@ -86,7 +86,7 @@ duk_ret_t load_func(duk_context* ctx) {
         // compile source
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
-        auto path_short = support::script_engine_detail::shorten_script_path(path);
+        auto path_short = support::script_engine_map_detail::shorten_script_path(path);
         duk_push_lstring(ctx, path_short.c_str(), path_short.length());
         auto err = duk_pcompile(ctx, DUK_COMPILE_EVAL);
         if (DUK_EXEC_SUCCESS == err) {
