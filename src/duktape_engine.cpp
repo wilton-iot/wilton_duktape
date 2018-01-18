@@ -87,15 +87,15 @@ duk_ret_t load_func(duk_context* ctx) {
         wilton::support::log_debug("wilton.engine.duktape.eval",
                 "Evaluating source file, path: [" + path + "] ...");
         // compile source
-        std::string filename = path.substr(path.rfind("/") + 1);
-        fprintf(stderr, "[DBG]: loaded file: '%s'\n", filename.c_str());
+
+        auto path_short = support::script_engine_map_detail::shorten_script_path(path);
+
+        fprintf(stderr, "[DBG]: loaded file short path: '%s'\n", path_short.c_str());
         fflush(stderr);
 
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
-        auto path_short = support::script_engine_map_detail::shorten_script_path(path);
-        // duk_push_lstring(ctx, path_short.c_str(), path_short.length());
-        duk_push_lstring(ctx, filename.c_str(), filename.length());
+        duk_push_lstring(ctx, path_short.c_str(), path_short.length());
         auto err = duk_pcompile(ctx, DUK_COMPILE_EVAL);
         if (DUK_EXEC_SUCCESS == err) {
             err = duk_pcall(ctx, 0);
@@ -272,22 +272,20 @@ public:
         auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
             pop_stack(ctx);
         });
+
+        
         wilton::support::log_debug("wilton.engine.duktape.run", 
                 "Running callback script: [" + std::string(callback_script_json.data(), callback_script_json.size()) + "] ...");
         duk_get_global_string(ctx, "WILTON_run");
-
-
+        
         std::string module_id = get_cb_module_id(callback_script_json);
-        // std::string module_path = resolve_js_module_path(ctx, module_id);
 
         fprintf(stderr, "[DBG]: callback for WILTON_run\n");
         fprintf(stderr, "[DBG]: module_id: '%s.js'\n", module_id.c_str());
-        // fprintf(stderr, "[DBG]: module_path: '%s'\n", module_path.c_str());
         fflush(stderr);
 
         module_id.append(".js");
         duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
-        duk_push_lstring(ctx, module_id.c_str(), module_id.length());
         auto err = duk_pcall(ctx, 1);
         wilton::support::log_debug("wilton.engine.duktape.run",
                 "Callback run complete, result: [" + sl::support::to_string_bool(DUK_EXEC_SUCCESS == err) + "]");
