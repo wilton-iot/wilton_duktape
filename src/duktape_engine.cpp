@@ -276,14 +276,14 @@ public:
 
             duk_trans_socket_init(strtoul(debug_connection_port.c_str(), NULL, 0));
             duk_trans_socket_waitconn();
-    //        duk_debugger_attach(ctx,
-    //                            duk_trans_socket_read_cb,
-    //                            duk_trans_socket_write_cb,
-    //                            duk_trans_socket_peek_cb,
-    //                            duk_trans_socket_read_flush_cb,
-    //                            duk_trans_socket_write_flush_cb,
-    //                            NULL,  /* app request cb */
-    //                            NULL);
+            duk_debugger_attach(ctx,
+                                duk_trans_socket_read_cb,
+                                duk_trans_socket_write_cb,
+                                duk_trans_socket_peek_cb,
+                                duk_trans_socket_read_flush_cb,
+                                duk_trans_socket_write_flush_cb,
+                                NULL,  /* app request cb */
+                                NULL);
 
         }
 
