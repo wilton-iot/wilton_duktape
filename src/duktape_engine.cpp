@@ -255,16 +255,38 @@ public:
         eval_js(ctx, init_code.data(), init_code.size());
         wilton::support::log_info("wilton.engine.duktape.init", "Engine initialization complete");
 
-        duk_trans_socket_init();
-        duk_trans_socket_waitconn();
-        duk_debugger_attach(ctx,
-                            duk_trans_socket_read_cb,
-                            duk_trans_socket_write_cb,
-                            duk_trans_socket_peek_cb,
-                            duk_trans_socket_read_flush_cb,
-                            duk_trans_socket_write_flush_cb,
-                            NULL,  /* app request cb */
-                            NULL);
+        char* config = nullptr;
+        int config_len = 0;
+
+        if (nullptr == wilton_config(std::addressof(config), std::addressof(config_len))) {
+            fprintf(stderr, "[DBG]: config loaded. length: %d:\n", config_len);
+            fprintf(stderr, "'%s':\n", config);
+        } else {
+            fprintf(stderr, "[DBG]: config NOT loaded\n");
+        }
+
+        // get debug connection port
+        auto cf = sl::json::load({(const char*) config, config_len});
+        auto debug_connection_port = cf["debugConnectionPort"].as_string();
+
+        // if debug port specified - run debugging
+        if (!std::string(debug_connection_port).empty()) {
+            fprintf(stderr, "[DBG]: debug_connection_port '%s'\n", debug_connection_port.c_str());
+            fflush(stderr);
+
+            duk_trans_socket_init(strtoul(debug_connection_port.c_str(), NULL, 0));
+            duk_trans_socket_waitconn();
+    //        duk_debugger_attach(ctx,
+    //                            duk_trans_socket_read_cb,
+    //                            duk_trans_socket_write_cb,
+    //                            duk_trans_socket_peek_cb,
+    //                            duk_trans_socket_read_flush_cb,
+    //                            duk_trans_socket_write_flush_cb,
+    //                            NULL,  /* app request cb */
+    //                            NULL);
+
+        }
+
     }
 
     support::buffer run_callback_script(duktape_engine&, sl::io::span<const char> callback_script_json) {

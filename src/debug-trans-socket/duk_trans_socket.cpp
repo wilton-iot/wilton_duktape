@@ -31,14 +31,20 @@
 
 static int server_sock = -1;
 static int client_sock = -1;
-
+static unsigned long duk_debug_port = DUK_DEBUG_PORT;
 /*
  *  Transport init and finish
  */
 
+
 void duk_trans_socket_init(void) {
+    duk_trans_socket_init(DUK_DEBUG_PORT);
+}
+
+void duk_trans_socket_init(unsigned long debug_port) {
 	struct sockaddr_in addr;
 	int on;
+    duk_debug_port = debug_port;
 
 	server_sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_sock < 0) {
@@ -59,7 +65,7 @@ void duk_trans_socket_init(void) {
 	memset((void *) &addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(DUK_DEBUG_PORT);
+    addr.sin_port = htons(debug_port);
 
 	if (bind(server_sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		fprintf(stderr, "%s: failed to bind server socket: %s\n",
@@ -104,7 +110,7 @@ void duk_trans_socket_waitconn(void) {
 		client_sock = -1;
 	}
 
-	fprintf(stderr, "Waiting for debug connection on port %d\n", (int) DUK_DEBUG_PORT);
+    fprintf(stderr, "Waiting for debug connection on port %d\n", (int) duk_debug_port);
 	fflush(stderr);
 
 	sz = (socklen_t) sizeof(addr);
