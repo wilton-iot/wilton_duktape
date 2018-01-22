@@ -258,12 +258,8 @@ public:
         char* config = nullptr;
         int config_len = 0;
 
-        if (nullptr == wilton_config(std::addressof(config), std::addressof(config_len))) {
-            fprintf(stderr, "[DBG]: config loaded. length: %d:\n", config_len);
-            fprintf(stderr, "'%s':\n", config);
-        } else {
-            fprintf(stderr, "[DBG]: config NOT loaded\n");
-        }
+        auto err_conf = wilton_config(std::addressof(config), std::addressof(config_len));
+        if (nullptr != err_conf) wilton::support::throw_wilton_error(err_conf, TRACEMSG(err_conf));
 
         // get debug connection port
         auto cf = sl::json::load({(const char*) config, config_len});

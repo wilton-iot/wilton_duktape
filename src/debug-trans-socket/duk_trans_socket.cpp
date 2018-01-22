@@ -25,7 +25,7 @@
 #define DUK_DEBUG_PORT 9091
 #endif
 
-#if 0
+#if 1
 #define DEBUG_PRINTS
 #endif
 
@@ -45,6 +45,10 @@ void duk_trans_socket_init(unsigned long debug_port) {
 	struct sockaddr_in addr;
 	int on;
     duk_debug_port = debug_port;
+
+  if (-1 != server_sock) {
+    close(server_sock);
+  }
 
 	server_sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_sock < 0) {
