@@ -72,7 +72,7 @@ duk_ret_t load_func(duk_context* ctx) {
         // load code
         char* code = nullptr;
         int code_len = 0;
-        auto err_load = wilton_load_script(path.c_str(), static_cast<int>(path.length()),
+        auto err_load = wilton_load_resource(path.c_str(), static_cast<int>(path.length()),
                 std::addressof(code), std::addressof(code_len));
         if (nullptr != err_load) {
             support::throw_wilton_error(err_load, TRACEMSG(err_load));
