@@ -86,12 +86,10 @@ duk_ret_t load_func(duk_context* ctx) {
         }
         wilton::support::log_debug("wilton.engine.duktape.eval",
                 "Evaluating source file, path: [" + path + "] ...");
+
         // compile source
-
         auto path_short = support::script_engine_map_detail::shorten_script_path(path);
-
-        fprintf(stderr, "[DBG]: loaded file short path: '%s'\n", path_short.c_str());
-        fflush(stderr);
+        wilton::support::log_debug("wilton.engine.duktape.eval", "loaded file short path: " + path_short);
 
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
@@ -202,43 +200,9 @@ std::string format_stacktrace(duk_context* ctx) {
 
 } // namespace
 
-std::string get_cb_module_id(sl::io::span<const char> callback_script_json) {
-    auto json = sl::json::load(callback_script_json);
-    return json["module"].as_string_nonempty_or_throw();
-}
-
-std::string resolve_js_module_path(duk_context* ctx, const std::string& module_id) {
-    auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
-        pop_stack(ctx);
-    });
-    auto callback_script_json = sl::json::dumps({
-        {"module", "wilton/loader"},
-        {"func", "findModulePath"},
-        {"args", [&module_id] {
-            auto vec = std::vector<sl::json::value>();
-            vec.emplace_back(module_id);
-            return vec;
-        }()}
-    });
-    duk_get_global_string(ctx, "WILTON_run");
-    duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
-    auto err = duk_pcall(ctx, 1);
-    if (DUK_EXEC_SUCCESS != err) {
-        throw support::exception(TRACEMSG(format_stacktrace(ctx)));
-    }
-    if (DUK_TYPE_STRING == duk_get_type(ctx, -1)) {
-        size_t len;
-        const char* str = duk_get_lstring(ctx, -1, std::addressof(len));
-        if (len > 0) {
-            return std::string(str, static_cast<int> (len));
-        }
-    }
-    return std::string();
-}
-
 class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
-    
+
 public:
     impl(sl::io::span<const char> init_code) {
         wilton::support::log_info("wilton.engine.duktape.init", "Initializing engine instance ...");
@@ -267,9 +231,7 @@ public:
 
         // if debug port specified - run debugging
         if (!std::string(debug_connection_port).empty()) {
-            fprintf(stderr, "[DBG]: debug_connection_port '%s'\n", debug_connection_port.c_str());
-            fflush(stderr);
-
+            wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port:  " + debug_connection_port);
             duk_trans_socket_init(strtoul(debug_connection_port.c_str(), NULL, 0));
             duk_trans_socket_waitconn();
             duk_debugger_attach(ctx,
@@ -278,9 +240,8 @@ public:
                                 duk_trans_socket_peek_cb,
                                 duk_trans_socket_read_flush_cb,
                                 duk_trans_socket_write_flush_cb,
-                                NULL,  /* app request cb */
-                                NULL);
-
+                                NULL,  // detach handler
+                                NULL); // udata
         }
 
     }
@@ -291,20 +252,13 @@ public:
             pop_stack(ctx);
         });
 
-        
         wilton::support::log_debug("wilton.engine.duktape.run", 
                 "Running callback script: [" + std::string(callback_script_json.data(), callback_script_json.size()) + "] ...");
         duk_get_global_string(ctx, "WILTON_run");
         
-        std::string module_id = get_cb_module_id(callback_script_json);
-
-        fprintf(stderr, "[DBG]: callback for WILTON_run\n");
-        fprintf(stderr, "[DBG]: module_id: '%s.js'\n", module_id.c_str());
-        fflush(stderr);
-
-        module_id.append(".js");
         duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
         auto err = duk_pcall(ctx, 1);
+
         wilton::support::log_debug("wilton.engine.duktape.run",
                 "Callback run complete, result: [" + sl::support::to_string_bool(DUK_EXEC_SUCCESS == err) + "]");
         if (DUK_EXEC_SUCCESS != err) {
