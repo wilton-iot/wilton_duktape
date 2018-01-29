@@ -31,6 +31,33 @@ namespace duktape {
 
 namespace { // anonymous
 
+// callback handlers
+duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
+    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_read_cb(udata, buffer, length);
+}
+
+duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
+    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_write_cb(udata, buffer, length);
+}
+
+duk_size_t duk_trans_socket_peek_cb(void *udata) {
+    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_peek_cb(udata);
+}
+
+void duk_trans_socket_read_flush_cb(void *udata) {
+    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
+    handler->duk_trans_socket_read_flush_cb(udata);
+}
+
+void duk_trans_socket_write_flush_cb(void *udata) {
+    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
+    handler->duk_trans_socket_write_flush_cb(udata);
+}
+
+
 void fatal_handler(duk_context* , duk_errcode_t code, const char* msg) {
 // void fatal_handler(void* recv_code, const char* msg) {
     // duk_errcode_t code = *((duk_errcode_t*) recv_code);
@@ -202,6 +229,10 @@ std::string format_stacktrace(duk_context* ctx) {
 
 class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
+    std::unique_ptr<transport_protocol_socket> transport_handler;
+
+    static unsigned long debug_port;
+    static bool is_port_setted;
 
 public:
     impl(sl::io::span<const char> init_code) {
@@ -229,11 +260,21 @@ public:
         auto cf = sl::json::load({(const char*) config, config_len});
         auto debug_connection_port = cf["debugConnectionPort"].as_string();
 
+        // create transport protocol handler
+        transport_handler = std::unique_ptr<transport_protocol_socket> (new transport_protocol_socket());
+
         // if debug port specified - run debugging
         if (!std::string(debug_connection_port).empty()) {
+            // iterate port number if it's not first creation.
+            if (!is_port_setted) {
+                debug_port = strtoul(debug_connection_port.c_str(), NULL, 0);
+                is_port_setted = true;
+            } else {
+                ++debug_port;
+            }
             wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port:  " + debug_connection_port);
-            duk_trans_socket_init(strtoul(debug_connection_port.c_str(), NULL, 0));
-            duk_trans_socket_waitconn();
+            transport_handler->duk_trans_socket_init(debug_port);
+            transport_handler->duk_trans_socket_waitconn();
             duk_debugger_attach(ctx,
                                 duk_trans_socket_read_cb,
                                 duk_trans_socket_write_cb,
@@ -241,7 +282,7 @@ public:
                                 duk_trans_socket_read_flush_cb,
                                 duk_trans_socket_write_flush_cb,
                                 NULL,  // detach handler
-                                NULL); // udata
+                                static_cast<void*> (transport_handler.get())); // udata
         }
 
     }
@@ -274,6 +315,10 @@ public:
         return support::make_empty_buffer();
     }    
 };
+
+// Init static members with start and safe parameters
+unsigned long duktape_engine::impl::debug_port = 0;
+bool duktape_engine::impl::is_port_setted = false;
 
 PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (sl::io::span<const char>), (), support::exception)
 PIMPL_FORWARD_METHOD(duktape_engine, support::buffer, run_callback_script, (sl::io::span<const char>), (), support::exception)

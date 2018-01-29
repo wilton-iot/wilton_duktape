@@ -21,32 +21,17 @@
 #include "duktape.h"
 #include "duk_trans_socket.h"
 
-#if !defined(DUK_DEBUG_PORT)
-#define DUK_DEBUG_PORT 9091
-#endif
-
 #if 0
 #define DEBUG_PRINTS
 #endif
 
-static int server_sock = -1;
-static int client_sock = -1;
-static unsigned long duk_debug_port = DUK_DEBUG_PORT;
-/*
- *  Transport init and finish
- */
 
-
-void duk_trans_socket_init(void) {
-    duk_trans_socket_init(DUK_DEBUG_PORT);
-}
-
-void duk_trans_socket_init(unsigned long debug_port) {
+void transport_protocol_socket::duk_trans_socket_init(unsigned long debug_port) {
 	struct sockaddr_in addr;
-	int on;
+    int on;
     duk_debug_port = debug_port;
 
-	server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    server_sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_sock < 0) {
 		fprintf(stderr, "%s: failed to create server socket: %s\n",
 		        __FILE__, strerror(errno));
@@ -74,8 +59,8 @@ void duk_trans_socket_init(unsigned long debug_port) {
 		goto fail;
 	}
 
-	listen(server_sock, 1 /*backlog*/);
-	return;
+    listen(server_sock, 1 /*backlog*/);
+    return;
 
  fail:
 	if (server_sock >= 0) {
@@ -84,20 +69,20 @@ void duk_trans_socket_init(unsigned long debug_port) {
 	}
 }
 
-void duk_trans_socket_finish(void) {
-	if (client_sock >= 0) {
-		(void) close(client_sock);
-		client_sock = -1;
-	}
-	if (server_sock >= 0) {
-		(void) close(server_sock);
-		server_sock = -1;
-	}
+void transport_protocol_socket::duk_trans_socket_finish(void) {
+    if (client_sock >= 0) {
+        (void) close(client_sock);
+        client_sock = -1;
+    }
+    if (server_sock >= 0) {
+        (void) close(server_sock);
+        server_sock = -1;
+    }
 }
 
-void duk_trans_socket_waitconn(void) {
+void transport_protocol_socket::duk_trans_socket_waitconn(void) {
 	struct sockaddr_in addr;
-	socklen_t sz;
+    socklen_t sz;
 
 	if (server_sock < 0) {
 		fprintf(stderr, "%s: no server socket, skip waiting for connection\n",
@@ -133,14 +118,14 @@ void duk_trans_socket_waitconn(void) {
 	if (server_sock >= 0) {
 		(void) close(server_sock);
 		server_sock = -1;
-	}
+    }
 	return;
 
  fail:
 	if (client_sock >= 0) {
 		(void) close(client_sock);
 		client_sock = -1;
-	}
+    }
 }
 
 /*
@@ -148,10 +133,10 @@ void duk_trans_socket_waitconn(void) {
  */
 
 /* Duktape debug transport callback: (possibly partial) read. */
-duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
+duk_size_t transport_protocol_socket::duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
 	ssize_t ret;
 
-	(void) udata;  /* not needed by the example */
+    (void) udata;  /* not needed by the example */
 
 #if defined(DEBUG_PRINTS)
 	fprintf(stderr, "%s: udata=%p, buffer=%p, length=%ld\n",
@@ -207,15 +192,15 @@ duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length
 	if (client_sock >= 0) {
 		(void) close(client_sock);
 		client_sock = -1;
-	}
+    }
 	return 0;
 }
 
 /* Duktape debug transport callback: (possibly partial) write. */
-duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
+duk_size_t transport_protocol_socket::duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
 	ssize_t ret;
 
-	(void) udata;  /* not needed by the example */
+    (void) udata;  /* not needed by the example */
 
 #if defined(DEBUG_PRINTS)
 	fprintf(stderr, "%s: udata=%p, buffer=%p, length=%ld\n",
@@ -261,11 +246,11 @@ duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t
 	if (client_sock >= 0) {
 		(void) close(client_sock);
 		client_sock = -1;
-	}
+    }
 	return 0;
 }
 
-duk_size_t duk_trans_socket_peek_cb(void *udata) {
+duk_size_t transport_protocol_socket::duk_trans_socket_peek_cb(void *udata) {
 #if defined(USE_SELECT)
 	struct timeval tm;
 	fd_set rfds;
@@ -275,7 +260,7 @@ duk_size_t duk_trans_socket_peek_cb(void *udata) {
 	int poll_rc;
 #endif
 
-	(void) udata;  /* not needed by the example */
+    (void) udata;  /* not needed by the example */
 
 #if defined(DEBUG_PRINTS)
 	fprintf(stderr, "%s: udata=%p\n", __func__, (void *) udata);
@@ -322,12 +307,12 @@ duk_size_t duk_trans_socket_peek_cb(void *udata) {
 	if (client_sock >= 0) {
 		(void) close(client_sock);
 		client_sock = -1;
-	}
+    }
 	return 0;
 }
 
-void duk_trans_socket_read_flush_cb(void *udata) {
-	(void) udata;  /* not needed by the example */
+void transport_protocol_socket::duk_trans_socket_read_flush_cb(void *udata) {
+    (void) udata;  /* not needed by the example */
 
 #if defined(DEBUG_PRINTS)
 	fprintf(stderr, "%s: udata=%p\n", __func__, (void *) udata);
@@ -348,7 +333,7 @@ void duk_trans_socket_read_flush_cb(void *udata) {
 	 */
 }
 
-void duk_trans_socket_write_flush_cb(void *udata) {
+void transport_protocol_socket::duk_trans_socket_write_flush_cb(void *udata) {
 	(void) udata;  /* not needed by the example */
 
 #if defined(DEBUG_PRINTS)
@@ -367,4 +352,11 @@ void duk_trans_socket_write_flush_cb(void *udata) {
 	 * implement this callback at all.
 	 */
 	return;
+}
+
+transport_protocol_socket::transport_protocol_socket():
+    server_sock(disconnected_state),
+    client_sock(disconnected_state),
+    duk_debug_port(DUK_DEBUG_PORT)
+{
 }
