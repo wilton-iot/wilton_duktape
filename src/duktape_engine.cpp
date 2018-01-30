@@ -21,7 +21,6 @@
 #include "staticlib/utils.hpp"
 
 #include "wilton/wiltoncall.h"
-#include "wilton/wilton_loader.h"
 
 #include "wilton/support/exception.hpp"
 #include "wilton/support/logging.hpp"
