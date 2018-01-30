@@ -24,7 +24,7 @@
 #include "staticlib/pimpl/forward_macros.hpp"
 #include "wilton/support/exception.hpp"
 
-#if 1
+#if 0
 #define DEBUG_PRINTS
 #endif
 
