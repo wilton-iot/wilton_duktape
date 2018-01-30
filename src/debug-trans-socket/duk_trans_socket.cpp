@@ -24,7 +24,7 @@
 #include "staticlib/pimpl/forward_macros.hpp"
 #include "wilton/support/exception.hpp"
 
-#if 0
+#if 1
 #define DEBUG_PRINTS
 #endif
 
@@ -252,7 +252,7 @@ public:
          * timeout here to recover from "black hole" disconnects.
          */
 
-        ret = write(client_sock, (const void *) buffer, (size_t) length);
+        ret = send(client_sock, (const void *) buffer, (size_t) length, MSG_NOSIGNAL);
         if (ret <= 0 || ret > (ssize_t) length) {
             fprintf(stderr, "%s: debug write failed, closing connection: %s\n",
                     __FILE__, strerror(errno));
