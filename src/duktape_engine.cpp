@@ -29,6 +29,8 @@
 namespace wilton {
 namespace duktape {
 
+using namespace transport;
+
 namespace { // anonymous
 
 // callback handlers
@@ -56,7 +58,6 @@ void duk_trans_socket_write_flush_cb(void *udata) {
     transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
     handler->duk_trans_socket_write_flush_cb(udata);
 }
-
 
 void fatal_handler(duk_context* , duk_errcode_t code, const char* msg) {
 // void fatal_handler(void* recv_code, const char* msg) {
@@ -102,7 +103,7 @@ duk_ret_t load_func(duk_context* ctx) {
         // load code
         char* code = nullptr;
         int code_len = 0;
-        auto err_load = wilton_load_script(path.c_str(), static_cast<int>(path.length()),
+        auto err_load = wilton_load_resource(path.c_str(), static_cast<int>(path.length()),
                 std::addressof(code), std::addressof(code_len));
         if (nullptr != err_load) {
             support::throw_wilton_error(err_load, TRACEMSG(err_load));
@@ -262,7 +263,6 @@ public:
 
         // create transport protocol handler
         transport_handler = std::unique_ptr<transport_protocol_socket> (new transport_protocol_socket());
-
         // if debug port specified - run debugging
         if (!std::string(debug_connection_port).empty()) {
             // iterate port number if it's not first creation.
