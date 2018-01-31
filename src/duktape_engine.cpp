@@ -8,8 +8,9 @@
 #include "duktape_engine.hpp"
 
 #include <cstring>
-#include <functional>
+//#include <functional>
 #include <memory>
+#include <atomic>
 
 #include "duktape.h"
 #include "duk_trans_socket.h"
@@ -32,35 +33,26 @@ using namespace transport;
 
 namespace { // anonymous
 
+// duktape debug port
+static std::atomic<uint16_t> engine_counter; // zero initialization by default
+
 // callback handlers
 duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
-    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
-    return handler->duk_trans_socket_read_cb(udata, buffer, length);
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_read_cb(buffer, length);
 }
 
 duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
-    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
-    return handler->duk_trans_socket_write_cb(udata, buffer, length);
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_write_cb(buffer, length);
 }
 
 duk_size_t duk_trans_socket_peek_cb(void *udata) {
-    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
-    return handler->duk_trans_socket_peek_cb(udata);
-}
-
-void duk_trans_socket_read_flush_cb(void *udata) {
-    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
-    handler->duk_trans_socket_read_flush_cb(udata);
-}
-
-void duk_trans_socket_write_flush_cb(void *udata) {
-    transport_protocol_socket* handler = static_cast<transport_protocol_socket*> (udata);
-    handler->duk_trans_socket_write_flush_cb(udata);
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_peek_cb();
 }
 
 void fatal_handler(duk_context* , duk_errcode_t code, const char* msg) {
-// void fatal_handler(void* recv_code, const char* msg) {
-    // duk_errcode_t code = *((duk_errcode_t*) recv_code);
     throw support::exception(TRACEMSG("Duktape fatal error,"
             " code: [" + sl::support::to_string(code) + "], message: [" + msg + "]"));
 }
@@ -116,7 +108,7 @@ duk_ret_t load_func(duk_context* ctx) {
 
         // compile source
         auto path_short = support::script_engine_map_detail::shorten_script_path(path);
-        wilton::support::log_debug("wilton.engine.duktape.eval", "loaded file short path: " + path_short);
+        wilton::support::log_debug("wilton.engine.duktape.eval", "loaded file short path: [" + path_short + "]");
 
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
@@ -231,8 +223,7 @@ class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
     std::unique_ptr<transport_protocol_socket> transport_handler;
 
-    static unsigned long debug_port;
-    static bool is_port_setted;
+//    std::atomic<uint16_t>
 
 public:
     impl(sl::io::span<const char> init_code) {
@@ -255,33 +246,33 @@ public:
 
         auto err_conf = wilton_config(std::addressof(config), std::addressof(config_len));
         if (nullptr != err_conf) wilton::support::throw_wilton_error(err_conf, TRACEMSG(err_conf));
+        auto deferred = sl::support::defer([config] () STATICLIB_NOEXCEPT {
+            wilton_free(config);
+        }); // execute lambda on destruction
 
         // get debug connection port
-        auto cf = sl::json::load({(const char*) config, config_len});
+        auto cf = sl::json::load({const_cast<const char*> (config), config_len});
         auto debug_connection_port = cf["debugConnectionPort"].as_string();
 
         // create transport protocol handler
         transport_handler = std::unique_ptr<transport_protocol_socket> (new transport_protocol_socket());
         // if debug port specified - run debugging
-        if (!std::string(debug_connection_port).empty()) {
-            // iterate port number if it's not first creation.
-            if (!is_port_setted) {
-                debug_port = strtoul(debug_connection_port.c_str(), NULL, 0);
-                is_port_setted = true;
-            } else {
-                ++debug_port;
-            }
-            wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port:  " + debug_connection_port);
+        if (!debug_connection_port.empty()) {
+            // iterate port number by engine_counter
+            uint16_t port_offset = engine_counter.fetch_add(1, std::memory_order_acq_rel); // atomic operation
+            uint16_t debug_port = staticlib::utils::parse_uint16(debug_connection_port) + port_offset;
+
+            wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port: [" + debug_connection_port + "]");
             transport_handler->duk_trans_socket_init(debug_port);
             transport_handler->duk_trans_socket_waitconn();
             duk_debugger_attach(ctx,
-                                duk_trans_socket_read_cb,
-                                duk_trans_socket_write_cb,
-                                duk_trans_socket_peek_cb,
-                                duk_trans_socket_read_flush_cb,
-                                duk_trans_socket_write_flush_cb,
-                                NULL,  // detach handler
-                                static_cast<void*> (transport_handler.get())); // udata
+                    duk_trans_socket_read_cb,
+                    duk_trans_socket_write_cb,
+                    duk_trans_socket_peek_cb,
+                    NULL, // read_flush_cb
+                    NULL, // write_flush_cb
+                    NULL, // detach handler
+                    static_cast<void*> (transport_handler.get())); // udata
         }
 
     }
@@ -316,8 +307,8 @@ public:
 };
 
 // Init static members with start and safe parameters
-unsigned long duktape_engine::impl::debug_port = 0;
-bool duktape_engine::impl::is_port_setted = false;
+//unsigned long duktape_engine::impl::debug_port = 0;
+//bool duktape_engine::impl::is_port_set = false;
 
 PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (sl::io::span<const char>), (), support::exception)
 PIMPL_FORWARD_METHOD(duktape_engine, support::buffer, run_callback_script, (sl::io::span<const char>), (), support::exception)
