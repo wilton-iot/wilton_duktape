@@ -229,10 +229,8 @@ public:
         }
         if (DUK_TYPE_STRING == duk_get_type(ctx, -1)) {
             size_t len;
-            const char* str = duk_get_lstring(ctx, -1, std::addressof(len));
-            if (len > 0) {
-                return support::make_array_buffer(str, static_cast<int> (len));
-            }
+            const char* str = duk_get_lstring(ctx, -1, std::addressof(len));            
+            return support::make_array_buffer(str, static_cast<int> (len));            
         }
         return support::make_empty_buffer();
     }    
