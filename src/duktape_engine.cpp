@@ -8,7 +8,6 @@
 #include "duktape_engine.hpp"
 
 #include <cstring>
-//#include <functional>
 #include <memory>
 #include <atomic>
 
