@@ -33,7 +33,7 @@ using namespace transport;
 
 namespace { // anonymous
 
-// duktape debug port
+// duktape debug port offset iterator
 static std::atomic<uint16_t> engine_counter; // zero initialization by default
 
 // callback handlers
@@ -223,8 +223,6 @@ class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
     std::unique_ptr<transport_protocol_socket> transport_handler;
 
-//    std::atomic<uint16_t>
-
 public:
     impl(sl::io::span<const char> init_code) {
         wilton::support::log_info("wilton.engine.duktape.init", "Initializing engine instance ...");
@@ -303,10 +301,6 @@ public:
         return support::make_empty_buffer();
     }    
 };
-
-// Init static members with start and safe parameters
-//unsigned long duktape_engine::impl::debug_port = 0;
-//bool duktape_engine::impl::is_port_set = false;
 
 PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (sl::io::span<const char>), (), support::exception)
 PIMPL_FORWARD_METHOD(duktape_engine, support::buffer, run_callback_script, (sl::io::span<const char>), (), support::exception)
