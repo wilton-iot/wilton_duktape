@@ -30,6 +30,7 @@ endif ( )
 add_library ( ${PROJECT_NAME} SHARED
         ${CMAKE_CURRENT_LIST_DIR}/src/duktape_engine.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/wiltoncall_duktape.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/duk_trans_socket_unix.cpp
         ${${PROJECT_NAME}_RESFILE}
         ${${PROJECT_NAME}_DEFFILE} )
         

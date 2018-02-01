@@ -8,10 +8,11 @@
 #include "duktape_engine.hpp"
 
 #include <cstring>
-#include <functional>
 #include <memory>
+#include <atomic>
 
 #include "duktape.h"
+#include "duk_trans_socket.h"
 
 #include "staticlib/io.hpp"
 #include "staticlib/json.hpp"
@@ -20,7 +21,6 @@
 #include "staticlib/utils.hpp"
 
 #include "wilton/wiltoncall.h"
-#include "wilton/wilton_loader.h"
 
 #include "wilton/support/exception.hpp"
 #include "wilton/support/logging.hpp"
@@ -28,9 +28,30 @@
 namespace wilton {
 namespace duktape {
 
+using namespace transport;
+
 namespace { // anonymous
 
-void fatal_handler(duk_context*, duk_errcode_t code, const char* msg) {
+// duktape debug port offset iterator
+static std::atomic<uint16_t> engine_counter; // zero initialization by default
+
+// callback handlers
+duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_read_cb(buffer, length);
+}
+
+duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_write_cb(buffer, length);
+}
+
+duk_size_t duk_trans_socket_peek_cb(void *udata) {
+    auto handler = static_cast<transport_protocol_socket*> (udata);
+    return handler->duk_trans_socket_peek_cb();
+}
+
+void fatal_handler(duk_context* , duk_errcode_t code, const char* msg) {
     throw support::exception(TRACEMSG("Duktape fatal error,"
             " code: [" + sl::support::to_string(code) + "], message: [" + msg + "]"));
 }
@@ -83,15 +104,19 @@ duk_ret_t load_func(duk_context* ctx) {
         }
         wilton::support::log_debug("wilton.engine.duktape.eval",
                 "Evaluating source file, path: [" + path + "] ...");
+
         // compile source
+        auto path_short = support::script_engine_map_detail::shorten_script_path(path);
+        wilton::support::log_debug("wilton.engine.duktape.eval", "loaded file short path: [" + path_short + "]");
+
         duk_push_lstring(ctx, code, code_len);
         wilton_free(code);
-        auto path_short = support::script_engine_map_detail::shorten_script_path(path);
         duk_push_lstring(ctx, path_short.c_str(), path_short.length());
         auto err = duk_pcompile(ctx, DUK_COMPILE_EVAL);
         if (DUK_EXEC_SUCCESS == err) {
             err = duk_pcall(ctx, 0);
         }
+
         if (DUK_EXEC_SUCCESS != err) {
             std::string msg = format_error(ctx);
             duk_pop(ctx);
@@ -101,13 +126,14 @@ duk_ret_t load_func(duk_context* ctx) {
             duk_pop(ctx);
             duk_push_true(ctx);
         }
+
         return 1;
     } catch (const std::exception& e) {
         throw support::exception(TRACEMSG(e.what() + 
-                "\nError loading script, path: [" + path + "]").c_str());
+                "\nError(e) loading script, path: [" + path + "]").c_str());
     } catch (...) {
         throw support::exception(TRACEMSG(
-                "Error loading script, path: [" + path + "]").c_str());
+                "Error(...) loading script, path: [" + path + "]").c_str());
     }    
 }
 
@@ -194,7 +220,8 @@ std::string format_stacktrace(duk_context* ctx) {
 
 class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
-    
+    std::unique_ptr<transport_protocol_socket> transport_handler;
+
 public:
     impl(sl::io::span<const char> init_code) {
         wilton::support::log_info("wilton.engine.duktape.init", "Initializing engine instance ...");
@@ -210,6 +237,41 @@ public:
         register_c_func(ctx, "WILTON_wiltoncall", wiltoncall_func, 2);
         eval_js(ctx, init_code.data(), init_code.size());
         wilton::support::log_info("wilton.engine.duktape.init", "Engine initialization complete");
+
+        char* config = nullptr;
+        int config_len = 0;
+
+        auto err_conf = wilton_config(std::addressof(config), std::addressof(config_len));
+        if (nullptr != err_conf) wilton::support::throw_wilton_error(err_conf, TRACEMSG(err_conf));
+        auto deferred = sl::support::defer([config] () STATICLIB_NOEXCEPT {
+            wilton_free(config);
+        }); // execute lambda on destruction
+
+        // get debug connection port
+        auto cf = sl::json::load({const_cast<const char*> (config), config_len});
+        auto debug_connection_port = cf["debugConnectionPort"].as_string();
+
+        // create transport protocol handler
+        transport_handler = std::unique_ptr<transport_protocol_socket> (new transport_protocol_socket());
+        // if debug port specified - run debugging
+        if (!debug_connection_port.empty()) {
+            // iterate port number by engine_counter
+            uint16_t port_offset = engine_counter.fetch_add(1, std::memory_order_acq_rel); // atomic operation
+            uint16_t debug_port = staticlib::utils::parse_uint16(debug_connection_port) + port_offset;
+
+            wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port: [" + debug_connection_port + "]");
+            transport_handler->duk_trans_socket_init(debug_port);
+            transport_handler->duk_trans_socket_waitconn();
+            duk_debugger_attach(ctx,
+                    duk_trans_socket_read_cb,
+                    duk_trans_socket_write_cb,
+                    duk_trans_socket_peek_cb,
+                    NULL, // read_flush_cb
+                    NULL, // write_flush_cb
+                    NULL, // detach handler
+                    static_cast<void*> (transport_handler.get())); // udata
+        }
+
     }
 
     support::buffer run_callback_script(duktape_engine&, sl::io::span<const char> callback_script_json) {
@@ -217,11 +279,14 @@ public:
         auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
             pop_stack(ctx);
         });
+
         wilton::support::log_debug("wilton.engine.duktape.run", 
                 "Running callback script: [" + std::string(callback_script_json.data(), callback_script_json.size()) + "] ...");
         duk_get_global_string(ctx, "WILTON_run");
+        
         duk_push_lstring(ctx, callback_script_json.data(), callback_script_json.size());
         auto err = duk_pcall(ctx, 1);
+
         wilton::support::log_debug("wilton.engine.duktape.run",
                 "Callback run complete, result: [" + sl::support::to_string_bool(DUK_EXEC_SUCCESS == err) + "]");
         if (DUK_EXEC_SUCCESS != err) {
