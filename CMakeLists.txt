@@ -25,12 +25,15 @@ if ( STATICLIB_TOOLCHAIN MATCHES "windows_.+" )
             ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.rc )
     set ( ${PROJECT_NAME}_RESFILE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.rc )
     set ( ${PROJECT_NAME}_DEFFILE ${CMAKE_CURRENT_LIST_DIR}/resources/${PROJECT_NAME}.def )
+    list ( APPEND ${PROJECT_NAME}_PLATFORM_SRC ${CMAKE_CURRENT_LIST_DIR}/src/duktape_debug_transport_windows.cpp )
+else ( )
+    list ( APPEND ${PROJECT_NAME}_PLATFORM_SRC ${CMAKE_CURRENT_LIST_DIR}/src/duktape_debug_transport_unix.cpp )
 endif ( )
 
 add_library ( ${PROJECT_NAME} SHARED
         ${CMAKE_CURRENT_LIST_DIR}/src/duktape_engine.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/wiltoncall_duktape.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/duk_trans_socket_unix.cpp
+        ${${PROJECT_NAME}_PLATFORM_SRC}
         ${${PROJECT_NAME}_RESFILE}
         ${${PROJECT_NAME}_DEFFILE} )
         

@@ -12,7 +12,6 @@
 #include <atomic>
 
 #include "duktape.h"
-#include "duk_trans_socket.h"
 
 #include "staticlib/io.hpp"
 #include "staticlib/json.hpp"
@@ -25,10 +24,10 @@
 #include "wilton/support/exception.hpp"
 #include "wilton/support/logging.hpp"
 
+#include "duktape_debug_transport.hpp"
+
 namespace wilton {
 namespace duktape {
-
-using namespace transport;
 
 namespace { // anonymous
 
@@ -37,22 +36,22 @@ static std::atomic<uint16_t> engine_counter; // zero initialization by default
 
 // callback handlers
 duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
-    auto handler = static_cast<transport_protocol_socket*> (udata);
+    auto handler = static_cast<duktape_debug_transport*> (udata);
     return handler->duk_trans_socket_read_cb(buffer, length);
 }
 
 duk_size_t duk_trans_socket_write_cb(void *udata, const char *buffer, duk_size_t length) {
-    auto handler = static_cast<transport_protocol_socket*> (udata);
+    auto handler = static_cast<duktape_debug_transport*> (udata);
     return handler->duk_trans_socket_write_cb(buffer, length);
 }
 
 duk_size_t duk_trans_socket_peek_cb(void *udata) {
-    auto handler = static_cast<transport_protocol_socket*> (udata);
+    auto handler = static_cast<duktape_debug_transport*> (udata);
     return handler->duk_trans_socket_peek_cb();
 }
 
 void fatal_handler(duk_context* , duk_errcode_t code, const char* msg) {
-    throw support::exception(TRACEMSG("Duktape fatal error,"
+    wilton::support::log_error("wilton.engine.duktape.debug", TRACEMSG("Duktape fatal error,"
             " code: [" + sl::support::to_string(code) + "], message: [" + msg + "]"));
 }
 
@@ -216,17 +215,40 @@ std::string format_stacktrace(duk_context* ctx) {
     return res;
 }
 
+uint16_t get_debug_port_from_config() {
+    char* config = nullptr;
+    int config_len = 0;
+
+    auto err_conf = wilton_config(std::addressof(config), std::addressof(config_len));
+    if (nullptr != err_conf) wilton::support::throw_wilton_error(err_conf, TRACEMSG(err_conf));
+    auto deferred = sl::support::defer([config] () STATICLIB_NOEXCEPT {
+        wilton_free(config);
+    }); // execute lambda on destruction
+
+    // get debug connection port
+    auto cf = sl::json::load({const_cast<const char*> (config), config_len});
+    auto port_str = cf["debugConnectionPort"].as_string();
+
+    if (!port_str.empty()) {
+        uint16_t base_port = sl::utils::parse_uint16(port_str);
+        // iterate port number by engine_counter
+        uint16_t port_offset = engine_counter.fetch_add(1, std::memory_order_acq_rel); // atomic operation
+        return base_port + port_offset;
+    }
+    return 0;
+}
+
 } // namespace
 
 class duktape_engine::impl : public sl::pimpl::object::impl {
     std::unique_ptr<duk_context, std::function<void(duk_context*)>> dukctx;
-    std::unique_ptr<transport_protocol_socket> transport_handler;
+    duktape_debug_transport debug_transport;
 
 public:
-    impl(sl::io::span<const char> init_code) {
+    impl(sl::io::span<const char> init_code) :
+    dukctx(duk_create_heap(nullptr, nullptr, nullptr, nullptr, fatal_handler), ctx_deleter),
+    debug_transport(get_debug_port_from_config()) {
         wilton::support::log_info("wilton.engine.duktape.init", "Initializing engine instance ...");
-        this->dukctx = std::unique_ptr<duk_context, std::function<void(duk_context*)>>(
-                duk_create_heap(nullptr, nullptr, nullptr, nullptr, fatal_handler), ctx_deleter);
         auto ctx = dukctx.get();
         if (nullptr == ctx) throw support::exception(TRACEMSG(
                 "Error creating Duktape context"));
@@ -238,30 +260,14 @@ public:
         eval_js(ctx, init_code.data(), init_code.size());
         wilton::support::log_info("wilton.engine.duktape.init", "Engine initialization complete");
 
-        char* config = nullptr;
-        int config_len = 0;
-
-        auto err_conf = wilton_config(std::addressof(config), std::addressof(config_len));
-        if (nullptr != err_conf) wilton::support::throw_wilton_error(err_conf, TRACEMSG(err_conf));
-        auto deferred = sl::support::defer([config] () STATICLIB_NOEXCEPT {
-            wilton_free(config);
-        }); // execute lambda on destruction
-
-        // get debug connection port
-        auto cf = sl::json::load({const_cast<const char*> (config), config_len});
-        auto debug_connection_port = cf["debugConnectionPort"].as_string();
-
-        // create transport protocol handler
-        transport_handler = std::unique_ptr<transport_protocol_socket> (new transport_protocol_socket());
         // if debug port specified - run debugging
-        if (!debug_connection_port.empty()) {
-            // iterate port number by engine_counter
-            uint16_t port_offset = engine_counter.fetch_add(1, std::memory_order_acq_rel); // atomic operation
-            uint16_t debug_port = staticlib::utils::parse_uint16(debug_connection_port) + port_offset;
+        if (debug_transport.is_active()) {
 
-            wilton::support::log_debug("wilton.engine.duktape.init", "debug_connection_port: [" + debug_connection_port + "]");
-            transport_handler->duk_trans_socket_init(debug_port);
-            transport_handler->duk_trans_socket_waitconn();
+            wilton::support::log_debug("wilton.engine.duktape.init",
+                    "port: [" + sl::support::to_string(debug_transport.get_port()) + "]");
+            // create transport protocol handler
+            debug_transport.duk_trans_socket_init();
+            debug_transport.duk_trans_socket_waitconn();
             duk_debugger_attach(ctx,
                     duk_trans_socket_read_cb,
                     duk_trans_socket_write_cb,
@@ -269,7 +275,7 @@ public:
                     NULL, // read_flush_cb
                     NULL, // write_flush_cb
                     NULL, // detach handler
-                    static_cast<void*> (transport_handler.get())); // udata
+                    static_cast<void*> (std::addressof(debug_transport))); // udata
         }
 
     }

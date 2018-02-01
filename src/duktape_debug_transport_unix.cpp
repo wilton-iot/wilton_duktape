@@ -8,17 +8,21 @@
  *  The default is to use poll(), but you can switch to select() by
  *  defining USE_SELECT.  See https://daniel.haxx.se/docs/poll-vs-select.html.
  */
+#include "duktape_debug_transport.hpp"
 
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <thread>
+
 #include <unistd.h>
-
 #include <poll.h>
 #include <errno.h>
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include "duktape.h"
-#include "duk_trans_socket.h"
 
 #include "staticlib/pimpl/forward_macros.hpp"
 #include "wilton/support/exception.hpp"
@@ -27,29 +31,40 @@
 
 namespace wilton {
 namespace duktape {
-namespace transport {
 
-class transport_protocol_socket::impl : public sl::pimpl::object::impl {
-    const int disconnected_state = -1;
-    const uint16_t default_port = 9091;
-    const std::string log_id = "duktape.transport.socket";
+namespace { // anonymous
+
+const int disconnected_state = -1;
+const std::string log_id = "duktape.transport.socket";
+
+} // namespace
+
+class duktape_debug_transport::impl : public sl::pimpl::object::impl {
     int server_sock;
     int client_sock;
     uint16_t duk_debug_port;
+
 public:
-    impl() :
+    impl(uint16_t debug_port) :
     server_sock(disconnected_state),
     client_sock(disconnected_state),
-    duk_debug_port(default_port) {
+    duk_debug_port(debug_port) { }
+
+
+    bool is_active(const duktape_debug_transport&) const {
+        return 0 != duk_debug_port;
     }
 
-    // For pimpl construction member functions get 'transport_protocol_socket&' parameter
+    uint16_t get_port(const duktape_debug_transport&) const {
+        return duk_debug_port;
+    }
+
+    // For pimpl construction member functions get 'duktape_debug_transport&' parameter
     // By analog in wilton_usb
-    void duk_trans_socket_init(transport_protocol_socket&, uint16_t debug_port) {
+    void duk_trans_socket_init(duktape_debug_transport&) {
         struct sockaddr_in addr;
         int on;
-        duk_debug_port = debug_port;
-        std::string error("");
+        auto error = std::string("");
 
         server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (server_sock < 0) {
@@ -66,7 +81,7 @@ public:
         memset((void *) &addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = htons(debug_port);
+        addr.sin_port = htons(duk_debug_port);
 
         if (bind(server_sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
             error.assign("failed to bind server socket: [" + std::string(strerror(errno)) + "]");
@@ -83,11 +98,10 @@ public:
         }
         // handle error
         wilton::support::log_error(log_id, error);
-        char* err = wilton::support::alloc_copy(error);
-        wilton::support::throw_wilton_error(err, TRACEMSG(err));
+        throw support::exception(TRACEMSG(error));
     }
 
-    void duk_trans_socket_waitconn(transport_protocol_socket&) {
+    void duk_trans_socket_waitconn(duktape_debug_transport&) {
         struct sockaddr_in addr;
         socklen_t sz;
         std::string error("");
@@ -101,8 +115,9 @@ public:
             client_sock = -1;
         }
 
-        fprintf(stdout, "Waiting for debug connection on port [%d]\n", (int) duk_debug_port);
-        fflush(stdout);
+        auto thread_id = sl::support::to_string_any(std::this_thread::get_id());
+        std::cout << "Thread, id: [" + thread_id + "]," <<
+                " waiting for debug connection on port: [" << duk_debug_port << "]" << std::endl;
 
         sz = (socklen_t) sizeof(addr);
         client_sock = accept(server_sock, (struct sockaddr *) &addr, &sz);
@@ -111,8 +126,8 @@ public:
             goto fail;
         }
 
-        fprintf(stdout, "Debug connection established\n");
-        fflush(stdout);
+        std::cout << "Thread, id: [" + thread_id + "]," <<
+                " debug connection established" << std::endl;
 
         /* XXX: For now, close the listen socket because we won't accept new
          * connections anyway.  A better implementation would allow multiple
@@ -132,8 +147,7 @@ public:
         }
         // handle error
         wilton::support::log_error(log_id, error);
-        char* err = wilton::support::alloc_copy(error);
-        wilton::support::throw_wilton_error(err, TRACEMSG(err));
+        throw support::exception(TRACEMSG(error));
     }
 
     /*
@@ -141,7 +155,7 @@ public:
      */
 
     /* Duktape debug transport callback: (possibly partial) read. */
-    duk_size_t duk_trans_socket_read_cb(transport_protocol_socket&, char *buffer, duk_size_t length) {
+    duk_size_t duk_trans_socket_read_cb(duktape_debug_transport&, char *buffer, duk_size_t length) {
 
         if (client_sock < 0) {
             return 0;
@@ -191,7 +205,7 @@ public:
     }
 
     /* Duktape debug transport callback: (possibly partial) write. */
-    duk_size_t duk_trans_socket_write_cb(transport_protocol_socket&, const char *buffer, duk_size_t length) {
+    duk_size_t duk_trans_socket_write_cb(duktape_debug_transport&, const char *buffer, duk_size_t length) {
 
         if (client_sock < 0) {
             return 0;
@@ -232,7 +246,7 @@ public:
         return 0;
     }
 
-    duk_size_t duk_trans_socket_peek_cb(transport_protocol_socket&) {
+    duk_size_t duk_trans_socket_peek_cb(duktape_debug_transport&) {
 
         if (client_sock < 0) {
             return 0;
@@ -267,14 +281,14 @@ public:
     }
 };
 
+PIMPL_FORWARD_CONSTRUCTOR(duktape_debug_transport, (uint16_t), (), support::exception)
+PIMPL_FORWARD_METHOD(duktape_debug_transport, bool, is_active, (), (const), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, uint16_t, get_port, (), (const), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, void, duk_trans_socket_init, (), (), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, void, duk_trans_socket_waitconn, (), (), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, duk_size_t, duk_trans_socket_read_cb, (char*)(duk_size_t), (), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, duk_size_t, duk_trans_socket_write_cb, (const char*) (duk_size_t), (), support::exception);
+PIMPL_FORWARD_METHOD(duktape_debug_transport, duk_size_t, duk_trans_socket_peek_cb, (), (), support::exception);
 
-PIMPL_FORWARD_CONSTRUCTOR(transport_protocol_socket, (), (), support::exception)
-PIMPL_FORWARD_METHOD(transport_protocol_socket, void, duk_trans_socket_init, (uint16_t), (), support::exception);
-PIMPL_FORWARD_METHOD(transport_protocol_socket, void, duk_trans_socket_waitconn, (), (), support::exception);
-PIMPL_FORWARD_METHOD(transport_protocol_socket, duk_size_t, duk_trans_socket_read_cb, (char*)(duk_size_t), (), support::exception);
-PIMPL_FORWARD_METHOD(transport_protocol_socket, duk_size_t, duk_trans_socket_write_cb, (const char*) (duk_size_t), (), support::exception);
-PIMPL_FORWARD_METHOD(transport_protocol_socket, duk_size_t, duk_trans_socket_peek_cb, (), (), support::exception);
-
-}
-}
+} // namespace
 }
