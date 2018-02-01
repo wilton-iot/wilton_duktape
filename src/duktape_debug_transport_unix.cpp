@@ -24,9 +24,10 @@
 
 #include "duktape.h"
 
+#include "staticlib/support.hpp"
 #include "staticlib/pimpl/forward_macros.hpp"
+
 #include "wilton/support/exception.hpp"
-#include "wilton/support/alloc_copy.hpp"
 #include "wilton/support/logging.hpp"
 
 namespace wilton {
@@ -39,6 +40,7 @@ const std::string log_id = "duktape.transport.socket";
 
 } // namespace
 
+// based on https://github.com/svaarala/duktape/blob/v1.6-maintenance/examples/debug-trans-socket/duk_trans_socket_unix.c
 class duktape_debug_transport::impl : public sl::pimpl::object::impl {
     int server_sock;
     int client_sock;
@@ -64,7 +66,7 @@ public:
     void duk_trans_socket_init(duktape_debug_transport&) {
         struct sockaddr_in addr;
         int on;
-        auto error = std::string("");
+        auto error = std::string();
 
         server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (server_sock < 0) {
@@ -104,7 +106,8 @@ public:
     void duk_trans_socket_waitconn(duktape_debug_transport&) {
         struct sockaddr_in addr;
         socklen_t sz;
-        std::string error("");
+        auto error = std::string();
+        auto thread_id = sl::support::to_string_any(std::this_thread::get_id());
 
         if (server_sock < 0) {
             error.assign("no server socket, skip waiting for connection;");
@@ -115,7 +118,6 @@ public:
             client_sock = -1;
         }
 
-        auto thread_id = sl::support::to_string_any(std::this_thread::get_id());
         std::cout << "Thread, id: [" + thread_id + "]," <<
                 " waiting for debug connection on port: [" << duk_debug_port << "]" << std::endl;
 
@@ -162,7 +164,7 @@ public:
         }
 
         ssize_t ret;
-        std::string error("");
+        auto error = std::string();
 
         if (length == 0) {
             /* This shouldn't happen. */
@@ -212,7 +214,7 @@ public:
         }
 
         ssize_t ret;
-        std::string error("");
+        auto error = std::string();
 
         if (length == 0) {
             /* This shouldn't happen. */
