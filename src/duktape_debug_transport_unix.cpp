@@ -22,6 +22,11 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+// not found on macOS
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0x0
+#endif // MSG_NOSIGNAL
+
 #include "duktape.h"
 
 #include "staticlib/support.hpp"
@@ -191,7 +196,7 @@ public:
             goto fail;
         } else if (ret > (ssize_t) length) {
             error.assign("debug read failed, ret too large ([" +
-                    std::to_string(ret) + "] > [" + std::to_string(ret) + "]), closing connection;");
+                    sl::support::to_string(ret) + "] > [" + sl::support::to_string(ret) + "]), closing connection;");
             goto fail;
         }
 
