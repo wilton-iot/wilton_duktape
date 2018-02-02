@@ -35,6 +35,8 @@
 #include "duktape.h"
 
 #include "staticlib/pimpl/forward_macros.hpp"
+#include "staticlib/support.hpp"
+
 #include "wilton/support/exception.hpp"
 #include "wilton/support/logging.hpp"
 
@@ -43,21 +45,19 @@ namespace duktape {
 
 namespace { // anonymous
 
-const int disconnected_state = -1;
 const std::string log_id = "duktape.transport.socket";
 
 } // namespace
 
 // based on https://github.com/svaarala/duktape/blob/v1.6-maintenance/examples/debug-trans-socket/duk_trans_socket_windows.c
 class duktape_debug_transport::impl : public sl::pimpl::object::impl {
-    int server_sock;
-    int client_sock;
+    int wsa_inited = 0;
+    SOCKET server_sock = INVALID_SOCKET;
+    SOCKET client_sock = INVALID_SOCKET;
     uint16_t duk_debug_port;
 
 public:
     impl(uint16_t debug_port) :
-    server_sock(disconnected_state),
-    client_sock(disconnected_state),
     duk_debug_port(debug_port) { }
 
 
@@ -76,15 +76,15 @@ public:
         struct addrinfo hints;
         struct addrinfo *result = NULL;
         int rc;
-        auto error = std::string("");
+        auto error = std::string();
+        auto port_str = sl::support::to_string(duk_debug_port);
 
         memset((void *) &wsa_data, 0, sizeof(wsa_data));
         memset((void *) &hints, 0, sizeof(hints));
 
         rc = WSAStartup(MAKEWORD(2, 2), &wsa_data);
         if (rc != 0) {
-            fprintf(stderr, "%s: WSAStartup() failed: %d\n", __FILE__, rc);
-            fflush(stderr);
+            error.assign("WSAStartup() failed: [" + sl::support::to_string(rc) + "]");
             goto fail;
         }
         wsa_inited = 1;
@@ -93,35 +93,28 @@ public:
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = IPPROTO_TCP;
         hints.ai_flags = AI_PASSIVE;
-
-        rc = getaddrinfo(DUK_DEBUG_ADDRESS, DUK__STRINGIFY(DUK_DEBUG_PORT), &hints, &result);
+        
+        rc = getaddrinfo("0.0.0.0", port_str.c_str(), &hints, &result);
         if (rc != 0) {
-            fprintf(stderr, "%s: getaddrinfo() failed: %d\n", __FILE__, rc);
-            fflush(stderr);
+            error.assign("getaddrinfo() failed: [" + sl::support::to_string(rc) + "]");
             goto fail;
         }
 
         server_sock = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
         if (server_sock == INVALID_SOCKET) {
-            fprintf(stderr, "%s: socket() failed with error: %ld\n",
-                    __FILE__, (long) WSAGetLastError());
-            fflush(stderr);
+            error.assign("socket() failed with error: [" + sl::support::to_string(WSAGetLastError()) + "]");
             goto fail;
         }
 
         rc = bind(server_sock, result->ai_addr, (int) result->ai_addrlen);
         if (rc == SOCKET_ERROR) {
-            fprintf(stderr, "%s: bind() failed with error: %ld\n",
-                    __FILE__, (long) WSAGetLastError());
-            fflush(stderr);
+            error.assign("bind() failed with error: [" + sl::support::to_string(WSAGetLastError()) + "]");
             goto fail;
         }
 
         rc = listen(server_sock, SOMAXCONN);
         if (rc == SOCKET_ERROR) {
-            fprintf(stderr, "%s: listen() failed with error: %ld\n",
-                    __FILE__, (long) WSAGetLastError());
-            fflush(stderr);
+            error.assign("listen() failed with error: [" + sl::support::to_string(WSAGetLastError()) + "]");
             goto fail;
         }
 
@@ -150,12 +143,11 @@ public:
     }
 
     void duk_trans_socket_waitconn(duktape_debug_transport&) {
-        auto error = std::string("");
+        auto error = std::string();
+        auto thread_id = sl::support::to_string_any(std::this_thread::get_id());
 
         if (server_sock == INVALID_SOCKET) {
-            fprintf(stderr, "%s: no server socket, skip waiting for connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("no server socket, skip waiting for connection");
             return;
         }
         if (client_sock != INVALID_SOCKET) {
@@ -168,9 +160,7 @@ public:
 
         client_sock = accept(server_sock, NULL, NULL);
         if (client_sock == INVALID_SOCKET) {
-            fprintf(stderr, "%s: accept() failed with error %ld, skip waiting for connection\n",
-                    __FILE__, (long) WSAGetLastError());
-            fflush(stderr);
+            error.assign("accept() failed with error [" + sl::support::to_string(WSAGetLastError()) + "], skip waiting for connection");
             goto fail;
         }
 
@@ -204,7 +194,7 @@ public:
 
     /* Duktape debug transport callback: (possibly partial) read. */
     duk_size_t duk_trans_socket_read_cb(duktape_debug_transport&, char *buffer, duk_size_t length) {
-        auto error = std::string("");
+        auto error = std::string();
         int ret;
 
         if (client_sock == INVALID_SOCKET) {
@@ -213,17 +203,13 @@ public:
 
         if (length == 0) {
             /* This shouldn't happen. */
-            fprintf(stderr, "%s: read request length == 0, closing connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("read request length == 0, closing connection");
             goto fail;
         }
 
         if (buffer == NULL) {
             /* This shouldn't happen. */
-            fprintf(stderr, "%s: read request buffer == NULL, closing connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("read request buffer == NULL, closing connection");
             goto fail;
         }
 
@@ -231,21 +217,15 @@ public:
          * timeout here to recover from "black hole" disconnects.
          */
 
-        ret = recv(client_sock, (void *) buffer, (int) length, 0);
+        ret = recv(client_sock, buffer, (int) length, 0);
         if (ret < 0) {
-            fprintf(stderr, "%s: debug read failed, error %d, closing connection\n",
-                    __FILE__, ret);
-            fflush(stderr);
+            error.assign("debug read failed, error [" + sl::support::to_string(ret) + "], closing connection");
             goto fail;
         } else if (ret == 0) {
-            fprintf(stderr, "%s: debug read failed, ret == 0 (EOF), closing connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("debug read failed, ret == 0 (EOF), closing connection");
             goto fail;
         } else if (ret > (int) length) {
-            fprintf(stderr, "%s: debug read failed, ret too large (%ld > %ld), closing connection\n",
-                    __FILE__, (long) ret, (long) length);
-            fflush(stderr);
+            error.assign("debug read failed, ret too large ([" + sl::support::to_string(ret) + "] > [" + sl::support::to_string(length)+ "]), closing connection");
             goto fail;
         }
 
@@ -262,7 +242,7 @@ public:
 
     /* Duktape debug transport callback: (possibly partial) write. */
     duk_size_t duk_trans_socket_write_cb(duktape_debug_transport&, const char *buffer, duk_size_t length) {
-        auto error = std::string("");
+        auto error = std::string();
         int ret;
 
         if (client_sock == INVALID_SOCKET) {
@@ -271,17 +251,13 @@ public:
 
         if (length == 0) {
             /* This shouldn't happen. */
-            fprintf(stderr, "%s: write request length == 0, closing connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("write request length == 0, closing connection");
             goto fail;
         }
 
         if (buffer == NULL) {
             /* This shouldn't happen. */
-            fprintf(stderr, "%s: write request buffer == NULL, closing connection\n",
-                    __FILE__);
-            fflush(stderr);
+            error.assign("write request buffer == NULL, closing connection");
             goto fail;
         }
 
@@ -289,11 +265,9 @@ public:
          * timeout here to recover from "black hole" disconnects.
          */
 
-        ret = send(client_sock, (const void *) buffer, (int) length, 0);
+        ret = send(client_sock, buffer, (int) length, 0);
         if (ret <= 0 || ret > (int) length) {
-            fprintf(stderr, "%s: debug write failed, ret %d, closing connection\n",
-                    __FILE__, ret);
-            fflush(stderr);
+            error.assign("debug write failed, ret: [" + sl::support::to_string(ret) + "], closing connection");
             goto fail;
         }
 
@@ -310,6 +284,7 @@ public:
 
     duk_size_t duk_trans_socket_peek_cb(duktape_debug_transport&) {
         u_long avail;
+        auto error = std::string();
         int rc;
 
         if (client_sock == INVALID_SOCKET) {
@@ -319,9 +294,7 @@ public:
         avail = 0;
         rc = ioctlsocket(client_sock, FIONREAD, &avail);
         if (rc != 0) {
-            fprintf(stderr, "%s: ioctlsocket() returned %d, closing connection\n",
-                    __FILE__, rc);
-            fflush(stderr);
+            error.assign("ioctlsocket() returned [" + sl::support::to_string(rc) + "], closing connection");
             goto fail;  /* also returns 0, which is correct */
         } else {
             if (avail == 0) {
@@ -337,6 +310,7 @@ public:
             (void) closesocket(client_sock);
             client_sock = INVALID_SOCKET;
         }
+        wilton::support::log_error(log_id, error);
         return 0;
     }
 };

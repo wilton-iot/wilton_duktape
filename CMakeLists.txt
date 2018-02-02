@@ -17,7 +17,8 @@ set ( ${PROJECT_NAME}_DEPS
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 
 # library
-set ( ${PROJECT_NAME}_PLATFORM_SRC ) 
+set ( ${PROJECT_NAME}_PLATFORM_SRC )
+set ( ${PROJECT_NAME}_PLATFORM_LIBS )
 set ( ${PROJECT_NAME}_RESFILE )
 set ( ${PROJECT_NAME}_DEFFILE )
 if ( STATICLIB_TOOLCHAIN MATCHES "windows_.+" )
@@ -26,6 +27,7 @@ if ( STATICLIB_TOOLCHAIN MATCHES "windows_.+" )
     set ( ${PROJECT_NAME}_RESFILE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.rc )
     set ( ${PROJECT_NAME}_DEFFILE ${CMAKE_CURRENT_LIST_DIR}/resources/${PROJECT_NAME}.def )
     list ( APPEND ${PROJECT_NAME}_PLATFORM_SRC ${CMAKE_CURRENT_LIST_DIR}/src/duktape_debug_transport_windows.cpp )
+    list ( APPEND ${PROJECT_NAME}_PLATFORM_LIBS ws2_32 )
 else ( )
     list ( APPEND ${PROJECT_NAME}_PLATFORM_SRC ${CMAKE_CURRENT_LIST_DIR}/src/duktape_debug_transport_unix.cpp )
 endif ( )
@@ -41,6 +43,7 @@ target_link_libraries ( ${PROJECT_NAME} PRIVATE
         wilton_core
         wilton_loader
         wilton_logging
+        ${${PROJECT_NAME}_PLATFORM_LIBS}
         ${${PROJECT_NAME}_DEPS_PC_LIBRARIES} )
 
 target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE 
