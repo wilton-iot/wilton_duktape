@@ -280,6 +280,14 @@ public:
 
     }
 
+    ~impl(){
+        // try to detach context from debugger
+        if (debug_transport.is_active()) {
+            auto ctx = dukctx.get();
+            duk_debugger_detach(ctx);
+        }
+    }
+
     support::buffer run_callback_script(duktape_engine&, sl::io::span<const char> callback_script_json) {
         auto ctx = dukctx.get();
         auto def = sl::support::defer([ctx]() STATICLIB_NOEXCEPT {
