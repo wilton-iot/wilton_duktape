@@ -297,7 +297,7 @@ public:
 
     }
 
-    ~impl(){
+    ~impl() STATICLIB_NOEXCEPT {
         // try to detach context from debugger
         if (debug_transport.is_active()) {
             auto ctx = dukctx.get();
