@@ -328,7 +328,7 @@ public:
             const char* str = duk_get_lstring(ctx, -1, std::addressof(len));            
             return support::make_array_buffer(str, static_cast<int> (len));            
         }
-        return support::make_empty_buffer();
+        return support::make_null_buffer();
     }    
 };
 
