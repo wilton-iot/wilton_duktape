@@ -48,8 +48,13 @@ namespace duktape {
 
 namespace { // anonymous
 
+const std::string st_prefix = "Error: caught invalid c++ std::exception '";
+const std::string st_postfix = "' (perhaps thrown by user code)";
+const std::string st_anon = "at [anon]";
+const std::string st_reqjs = "/require.js:";
+
 // duktape debug port offset iterator
-static std::atomic<uint16_t> engine_counter; // zero initialization by default
+std::atomic<uint16_t> engine_counter; // zero initialization by default
 
 // callback handlers
 duk_size_t duk_trans_socket_read_cb(void *udata, char *buffer, duk_size_t length) {
@@ -206,21 +211,17 @@ void eval_js(duk_context* ctx, const char* code, size_t code_len) {
 }
 
 std::string format_stacktrace(duk_context* ctx) {
-    static std::string prefix = "Error: caught invalid c++ std::exception '";
-    static std::string postfix = "' (perhaps thrown by user code)";
-    static std::string anon = "at [anon]";
-    static std::string reqjs = "/require.js:";
     auto msg = format_error(ctx);
-    sl::utils::replace_all(msg, prefix, "");
-    sl::utils::replace_all(msg, postfix, "");
+    sl::utils::replace_all(msg, st_prefix, "");
+    sl::utils::replace_all(msg, st_postfix, "");
     
     auto src = sl::io::make_buffered_source(sl::io::string_source(msg));
     auto res = std::string();
     std::string line = "";
     bool first = true;
     while(!(line = src.read_line()).empty()) {
-        if (std::string::npos == line.find(anon) ||
-                std::string::npos == line.find(reqjs)) {
+        if (std::string::npos == line.find(st_anon) ||
+                std::string::npos == line.find(st_reqjs)) {
             if (first) {
                 first = false;
             } else {
