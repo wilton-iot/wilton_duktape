@@ -25,8 +25,8 @@
 #include "duktape_engine.hpp"
 
 #include <cstring>
-#include <memory>
 #include <atomic>
+#include <memory>
 
 #include "duktape.h"
 
