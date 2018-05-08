@@ -330,11 +330,21 @@ public:
             return support::make_array_buffer(str, static_cast<int> (len));            
         }
         return support::make_null_buffer();
-    }    
+    } 
+
+    void run_garbage_collector(duktape_engine&) {
+        auto ctx = dukctx.get();
+        duk_gc(ctx, 0);
+        // You may want to call this function twice to ensure even
+        // objects with finalizers are collected.
+        // http://duktape.org/api.html#duk_gc
+        duk_gc(ctx, 0);
+    }
 };
 
 PIMPL_FORWARD_CONSTRUCTOR(duktape_engine, (sl::io::span<const char>), (), support::exception)
 PIMPL_FORWARD_METHOD(duktape_engine, support::buffer, run_callback_script, (sl::io::span<const char>), (), support::exception)
+PIMPL_FORWARD_METHOD(duktape_engine, void, run_garbage_collector, (), (), support::exception)
 
 
 } // namespace

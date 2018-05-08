@@ -50,6 +50,12 @@ support::buffer runscript(sl::io::span<const char> data) {
     return tlmap->run_script(data);
 }
 
+support::buffer rungc(sl::io::span<const char>) {
+    auto tlmap = shared_tlmap();
+    tlmap->run_garbage_collector();
+    return support::make_null_buffer();
+}
+
 void clean_tls(void*, const char* thread_id, int thread_id_len) {
     auto tlmap = shared_tlmap();
     tlmap->clean_thread_local(thread_id, thread_id_len);
@@ -64,6 +70,7 @@ extern "C" char* wilton_module_init() {
         auto err = wilton_register_tls_cleaner(nullptr, wilton::duktape::clean_tls);
         if (nullptr != err) wilton::support::throw_wilton_error(err, TRACEMSG(err));
         wilton::support::register_wiltoncall("runscript_duktape", wilton::duktape::runscript);
+        wilton::support::register_wiltoncall("rungc_duktape", wilton::duktape::rungc);
         return nullptr;
     } catch (const std::exception& e) {
         return wilton::support::alloc_copy(TRACEMSG(e.what() + "\nException raised"));

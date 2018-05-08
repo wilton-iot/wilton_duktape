@@ -53,6 +53,8 @@ public:
     duktape_engine(sl::io::span<const char> init_code);
     
     support::buffer run_callback_script(sl::io::span<const char> callback_script_json);
+
+    void run_garbage_collector();
 };
 
 } // namespace
