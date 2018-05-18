@@ -42,6 +42,8 @@ addons:
       - libudev-dev
       - libglib2.0-dev
       - libjavascriptcoregtk-3.0-dev
+      - libgtk-3-dev
+      - libwebkitgtk-3.0-dev
       - valgrind
 
 before_install:
@@ -57,10 +59,10 @@ install:
 before_script:
   - echo "Replacing repo to test PR"
   - set -e
-  - rm -r modules/wilton_duktape
-  - mv ../wilton_duktape modules/
+  - rm -r engines/wilton_duktape
+  - mv ../wilton_duktape engines/
   - set +e
-  - pushd modules/wilton_duktape
+  - pushd engines/wilton_duktape
   - git rev-parse HEAD
   - popd
 

@@ -48,7 +48,7 @@ namespace duktape {
 
 namespace { // anonymous
 
-const std::string st_prefix = "Error: caught invalid c++ std::exception '";
+const std::string st_prefix = "caught invalid c++ std::exception '";
 const std::string st_postfix = "' (perhaps thrown by user code)";
 const std::string st_anon = "at [anon]";
 const std::string st_reqjs = "/require.js:";
@@ -87,7 +87,7 @@ void pop_stack(duk_context* ctx) {
     duk_pop_n(ctx, duk_get_top(ctx));
 }
 
-std::string format_error(duk_context* ctx) {
+std::string extract_stacktrace(duk_context* ctx) {
     if (duk_is_error(ctx, -1)) {
         /* Accessing .stack might cause an error to be thrown, so wrap this
          * access in a duk_safe_call() if it matters.
@@ -100,6 +100,29 @@ std::string format_error(duk_context* ctx) {
         /* Non-Error value, coerce safely to string. */
         return std::string(duk_safe_to_string(ctx, -1));
     }
+}
+
+std::string format_stacktrace(duk_context* ctx) {
+    auto msg = extract_stacktrace(ctx);
+    sl::utils::replace_all(msg, st_prefix, "");
+    sl::utils::replace_all(msg, st_postfix, "");
+    
+    auto src = sl::io::make_buffered_source(sl::io::string_source(msg));
+    auto res = std::string();
+    std::string line = "";
+    bool first = true;
+    while(!(line = src.read_line()).empty()) {
+        if (std::string::npos == line.find(st_anon) ||
+                std::string::npos == line.find(st_reqjs)) {
+            if (first) {
+                first = false;
+            } else {
+                res.append("\n");
+            }
+            res.append(line);
+        }
+    }
+    return res;
 }
 
 duk_ret_t load_func(duk_context* ctx) {
@@ -139,7 +162,7 @@ duk_ret_t load_func(duk_context* ctx) {
         }
 
         if (DUK_EXEC_SUCCESS != err) {
-            std::string msg = format_error(ctx);
+            std::string msg = format_stacktrace(ctx);
             duk_pop(ctx);
             throw support::exception(TRACEMSG(msg + "\nCall error"));
         } else {
@@ -151,7 +174,7 @@ duk_ret_t load_func(duk_context* ctx) {
         return 1;
     } catch (const std::exception& e) {
         throw support::exception(TRACEMSG(e.what() + 
-                "\nError(e) loading script, path: [" + path + "]").c_str());
+                "\nError loading script, path: [" + path + "]").c_str());
     } catch (...) {
         throw support::exception(TRACEMSG(
                 "Error(...) loading script, path: [" + path + "]").c_str());
@@ -205,32 +228,9 @@ void eval_js(duk_context* ctx, const char* code, size_t code_len) {
     auto err = duk_peval_lstring(ctx, code, code_len);
     if (DUK_EXEC_SUCCESS != err) {
         // cannot happen - c++ exception will be thrown by duktape
-        throw support::exception(TRACEMSG(format_error(ctx) +
+        throw support::exception(TRACEMSG(format_stacktrace(ctx) +
                 "\nDuktape engine eval error"));
     }
-}
-
-std::string format_stacktrace(duk_context* ctx) {
-    auto msg = format_error(ctx);
-    sl::utils::replace_all(msg, st_prefix, "");
-    sl::utils::replace_all(msg, st_postfix, "");
-    
-    auto src = sl::io::make_buffered_source(sl::io::string_source(msg));
-    auto res = std::string();
-    std::string line = "";
-    bool first = true;
-    while(!(line = src.read_line()).empty()) {
-        if (std::string::npos == line.find(st_anon) ||
-                std::string::npos == line.find(st_reqjs)) {
-            if (first) {
-                first = false;
-            } else {
-                res.append("\n");
-            }
-            res.append(line);
-        }
-    }
-    return res;
 }
 
 uint16_t get_debug_port_from_config() {
