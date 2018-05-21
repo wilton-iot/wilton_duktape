@@ -126,13 +126,13 @@ std::string format_stacktrace(duk_context* ctx) {
 }
 
 duk_ret_t load_func(duk_context* ctx) {
-    std::string path = "";
-    try {        
+    auto path = std::string();
+    try {
         size_t path_len;
         const char* path_ptr = duk_get_lstring(ctx, 0, std::addressof(path_len));
         if (nullptr == path_ptr) {
             throw support::exception(TRACEMSG("Invalid arguments specified"));
-        }    
+        }
         path = std::string(path_ptr, path_len);
         // load code
         char* code = nullptr;
@@ -178,7 +178,7 @@ duk_ret_t load_func(duk_context* ctx) {
     } catch (...) {
         throw support::exception(TRACEMSG(
                 "Error(...) loading script, path: [" + path + "]").c_str());
-    }    
+    }
 }
 
 duk_ret_t wiltoncall_func(duk_context* ctx) {
