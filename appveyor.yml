@@ -26,10 +26,10 @@ install:
 
 build_script:
   - echo "Replacing repo to test PR"
-  - rd /s /q modules\wilton_duktape
-  - if exist modules\wilton_duktape exit /b 1
-  - robocopy ..\wilton_duktape modules\wilton_duktape /e /mov /nfl /ndl /njh /njs /nc /ns /np || true
-  - cd modules\wilton_duktape
+  - rd /s /q engines\wilton_duktape
+  - if exist engines\wilton_duktape exit /b 1
+  - robocopy ..\wilton_duktape engines\wilton_duktape /e /mov /nfl /ndl /njh /njs /nc /ns /np || true
+  - cd engines\wilton_duktape
   - git rev-parse HEAD
   - cd ..\..
   - cmd /c resources\ci\appveyor.bat
