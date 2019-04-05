@@ -37,16 +37,12 @@
  */
 #include "duktape_debug_transport.hpp"
 
-#if !defined(WIN32_LEAN_AND_MEAN)
-#define WIN32_LEAN_AND_MEAN
-#endif
-
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
 
-#include <windows.h>
+#include "staticlib/support/windows.hpp"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
